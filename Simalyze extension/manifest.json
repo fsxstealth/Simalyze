@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Websim Simalyze",
+  "version": "1.0",
+  "description": "Removes unwanted content and provides filtering options for WebSim based on a sophisticated algorithm using the full metadata API.",
+  "permissions": [],
+  "host_permissions": [
+    "https://websim.com/*",
+    "https://websim.ai/*",
+    "https://websim.pages.dev/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://websim.com/*",
+        "https://websim.ai/*",
+        "https://websim.pages.dev/*"
+      ],
+      "js": ["script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "128": "icon128.png"
+  },
+  "action": {
+    "default_icon": "icon128.png",
+    "default_title": "Websim Simalyze"
+  }
+}
