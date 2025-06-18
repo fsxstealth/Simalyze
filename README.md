@@ -93,7 +93,6 @@ All third-party plugins and CSS themes are the responsibility of their creators.
 
 - 🌍 WebSim: [https://websim.ai](https://websim.ai)  
 - 💬 SimPlug Discord: [https://discord.gg/s4UjAAMW](https://discord.gg/s4UjAAMW)
-- 
 ---
 
 *Built with purpose by FsX.*
