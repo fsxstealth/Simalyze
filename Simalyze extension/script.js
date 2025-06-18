@@ -16,11 +16,8 @@
     console.log('%cBy FsX', consoleByFsXStyle);
 
     let analyzerModeActive = JSON.parse(localStorage.getItem('simalyze_analyzerModeActive')) ?? false; 
-    /* @tweakable Enable or disable the mode that completely hides low-quality projects */
     let slopRemover2Active = JSON.parse(localStorage.getItem('simalyze_slopRemover2Active')) ?? false;
-    /* @tweakable Enable or disable the mode that visually highlights high-quality projects */
     let highlightGoodProjectsActive = JSON.parse(localStorage.getItem('simalyze_highlightGoodProjectsActive')) ?? false;
-    /* @tweakable The score threshold above which projects are highlighted as good */
     let highlightThreshold = JSON.parse(localStorage.getItem('simalyze_highlightThreshold')) ?? 75;
     let currentTheme = localStorage.getItem('simalyze_currentTheme') ?? 'gray';
     let customCSS = localStorage.getItem('simalyze_customCSS') ?? '';
@@ -29,34 +26,23 @@
     const creatorStatsCache = new Map();
     const analysisCache = new Map();
 
-    /* @tweakable The maximum number of concurrent API requests */
     const apiConcurrencyLimit = 5; 
-    /* @tweakable The maximum number of concurrent project analysis operations */
     const analysisConcurrencyLimit = 1; 
 
     const limitApi = pLimit(apiConcurrencyLimit); 
     const limitAnalysis = pLimit(analysisConcurrencyLimit); 
 
-    /* @tweakable Duration in milliseconds for how long project API data is cached */
     const projectCacheDuration = 5 * 60 * 1000; 
-    /* @tweakable Duration in milliseconds for how long creator statistics are cached */
     const creatorStatsCacheDuration = 5 * 60 * 1000; 
-    /* @tweakable Duration in milliseconds for how long asset counts are cached */
     const assetsCacheDuration = 10 * 60 * 1000; 
-    /* @tweakable Duration in milliseconds for how long project analysis results are cached */
     const analysisResultCacheDuration = 10 * 60 * 1000; 
-    /* @tweakable Duration in milliseconds for how long project revisions data is cached */
     const revisionsCacheDuration = 10 * 60 * 1000;
-    /* @tweakable Duration in milliseconds for how long project screenshots data is cached */
     const screenshotsCacheDuration = 10 * 60 * 1000;
-    /* @tweakable Duration in milliseconds for how long project descendants data is cached */
     const descendantsCacheDuration = 15 * 60 * 1000;
-    /* @tweakable Duration in milliseconds for how long project HTML content is cached */
     const htmlContentCacheDuration = 15 * 60 * 1000;
 
     const WEBSIM_API_BASE_URL = 'https://api.websim.com/api/v1';
     const SIMALYZE_LOGO_URL = 'https://raw.githubusercontent.com/fsxstealth/Quantum-Planner/main/lol.png';
-    /* @tweakable URL for the "Visit My Profile" button */
     const FSX_PROFILE_URL = 'https://websim.com/@fsx/';
 
     function saveSettings() {
