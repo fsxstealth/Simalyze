@@ -16,33 +16,56 @@
     console.log('%cBy FsX', consoleByFsXStyle);
 
     let analyzerModeActive = JSON.parse(localStorage.getItem('simalyze_analyzerModeActive')) ?? false; 
+    /* @tweakable Enable or disable the mode that completely hides low-quality projects */
     let slopRemover2Active = JSON.parse(localStorage.getItem('simalyze_slopRemover2Active')) ?? false;
+    /* @tweakable Enable or disable the mode that visually highlights high-quality projects */
     let highlightGoodProjectsActive = JSON.parse(localStorage.getItem('simalyze_highlightGoodProjectsActive')) ?? false;
+    /* @tweakable The score threshold above which projects are highlighted as good */
     let highlightThreshold = JSON.parse(localStorage.getItem('simalyze_highlightThreshold')) ?? 75;
     let currentTheme = localStorage.getItem('simalyze_currentTheme') ?? 'gray';
     let customCSS = localStorage.getItem('simalyze_customCSS') ?? '';
+
+    /* @tweakable Text displayed when analysis is loading */
+    let loadingAnalysisText = "Loading analysis...";
+    /* @tweakable Text for the button to skip analysis and view project */
+    let bypassAnalysisButtonText = "View Project (Bypass Analysis)";
+    /* @tweakable A keyword phrase that, if found in the title or description, will penalize the project's score. */
+    let unwantedKeyword = "Keyboard & Achievements";
+    /* @tweakable The score penalty applied if the unwanted keyword is found in the project's title or description. */
+    let unwantedKeywordPenalty = -50; 
 
     const projectDataCache = new Map();
     const creatorStatsCache = new Map();
     const analysisCache = new Map();
 
+    /* @tweakable The maximum number of concurrent API requests */
     const apiConcurrencyLimit = 5; 
+    /* @tweakable The maximum number of concurrent project analysis operations */
     const analysisConcurrencyLimit = 1; 
 
     const limitApi = pLimit(apiConcurrencyLimit); 
     const limitAnalysis = pLimit(analysisConcurrencyLimit); 
 
+    /* @tweakable Duration in milliseconds for how long project API data is cached */
     const projectCacheDuration = 5 * 60 * 1000; 
+    /* @tweakable Duration in milliseconds for how long creator statistics are cached */
     const creatorStatsCacheDuration = 5 * 60 * 1000; 
+    /* @tweakable Duration in milliseconds for how long asset counts are cached */
     const assetsCacheDuration = 10 * 60 * 1000; 
+    /* @tweakable Duration in milliseconds for how long project analysis results are cached */
     const analysisResultCacheDuration = 10 * 60 * 1000; 
+    /* @tweakable Duration in milliseconds for how long project revisions data is cached */
     const revisionsCacheDuration = 10 * 60 * 1000;
+    /* @tweakable Duration in milliseconds for how long project screenshots data is cached */
     const screenshotsCacheDuration = 10 * 60 * 1000;
+    /* @tweakable Duration in milliseconds for how long project descendants data is cached */
     const descendantsCacheDuration = 15 * 60 * 1000;
+    /* @tweakable Duration in milliseconds for how long project HTML content is cached */
     const htmlContentCacheDuration = 15 * 60 * 1000;
 
     const WEBSIM_API_BASE_URL = 'https://api.websim.com/api/v1';
     const SIMALYZE_LOGO_URL = 'https://raw.githubusercontent.com/fsxstealth/Quantum-Planner/main/lol.png';
+    /* @tweakable URL for the "Visit My Profile" button */
     const FSX_PROFILE_URL = 'https://websim.com/@fsx/';
 
     function saveSettings() {
@@ -377,13 +400,19 @@
         const isHtmlContentAvailable = typeof htmlContent === 'string';
 
         const title = (apiData?.project?.title || domData.title || '').toLowerCase();
-        const description = (apiData?.project?.description || '');
+        const description = (apiData?.project?.description || '').toLowerCase();
         const titleLength = title.length;
         const descriptionLength = description.length;
         const hasThumbnail = !!domData.previewImageUrl;
 
         let contentQualityImpact = 0;
         let contentQualityReason = [];
+
+        // Check for unwanted keywords
+        if (unwantedKeyword && (title.includes(unwantedKeyword.toLowerCase()) || description.includes(unwantedKeyword.toLowerCase()))) {
+            contentQualityImpact += unwantedKeywordPenalty;
+            contentQualityReason.push(`Contains unwanted keyword "${unwantedKeyword}" (${unwantedKeywordPenalty} penalty).`);
+        }
 
         if (titleLength < 5 && titleLength > 0) { contentQualityImpact -= 10; contentQualityReason.push(`Very short title (${titleLength} chars).`); }
         else if (titleLength < 15 && titleLength > 0) { contentQualityImpact -= 5; contentQualityReason.push(`Short title (${titleLength} chars).`); }
@@ -618,6 +647,75 @@
 
         for (const element of elementsToFilter) {
             element.dataset.simalyzed = "true";
+            
+            // --- New Loading State Logic ---
+            const imageWrapper = element.querySelector('div.flex.w-full.h-full.relative.overflow-hidden');
+            const imgElement = imageWrapper ? imageWrapper.querySelector('img.object-cover') : null;
+
+            let simalyzeProjectOverlay = element.querySelector('.simalyze-project-overlay');
+            if (!simalyzeProjectOverlay) {
+                simalyzeProjectOverlay = document.createElement('div');
+                simalyzeProjectOverlay.classList.add('simalyze-project-overlay');
+                simalyzeProjectOverlay.style.cssText = `
+                    position: absolute;
+                    top: 0; left: 0; width: 100%; height: 100%;
+                    display: flex; flex-direction: column; justify-content: center; align-items: center;
+                    z-index: 10;
+                    background-color: ${isHostDarkMode() ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.9)'};
+                    border-radius: inherit;
+                    backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+                    text-align: center;
+                    pointer-events: auto; 
+                    opacity: 1; 
+                    transition: opacity 0.3s ease-in-out;
+                `;
+                if (imageWrapper) {
+                    imageWrapper.appendChild(simalyzeProjectOverlay);
+                } else {
+                    // Fallback for elements without an imageWrapper (less common for projects)
+                    element.appendChild(simalyzeProjectOverlay);
+                }
+            }
+            // Force the project overlay to be visible initially to show loading state
+            simalyzeProjectOverlay.style.display = 'flex';
+            simalyzeProjectOverlay.style.opacity = '1';
+
+            // Set loading content for the overlay
+            simalyzeProjectOverlay.innerHTML = `
+                <div class="simalyze-spinner" style="
+                    --simalyze-loading-spinner-size: var(--simalyze-loading-spinner-size);
+                    border-top-color: var(--simalyze-loading-spinner-color);
+                "></div>
+                <span style="font-size: 16px; font-weight: bold; color: ${currentColors.textColor}; margin-top: 10px;">
+                    ${loadingAnalysisText}
+                </span>
+                <button class="simalyze-view-button-loading" style="
+                    background-color: ${currentColors.buttonBg};
+                    border: ${currentColors.thinStroke} solid ${currentColors.buttonBorder};
+                    border-radius: ${currentColors.borderRadius};
+                    padding: 8px 15px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    color: ${currentColors.textColor};
+                    transition: background-color 0.2s;
+                    pointer-events: auto; 
+                    margin-top: 15px;
+                ">
+                    ${bypassAnalysisButtonText}
+                </button>
+            `;
+            const viewButtonLoading = simalyzeProjectOverlay.querySelector('.simalyze-view-button-loading');
+            viewButtonLoading.onmouseover = () => { viewButtonLoading.style.backgroundColor = currentColors.buttonHover; };
+            viewButtonLoading.onmouseout = () => { viewButtonLoading.style.backgroundColor = currentColors.buttonBg; };
+            viewButtonLoading.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                element.dataset.simalyzeForceView = "true"; // Mark to force view
+                simalyzeProjectOverlay.style.display = 'none'; // Hide the loading overlay
+                if (imgElement) imgElement.style.filter = ''; // Ensure no blur from the overlay
+            };
+            // --- End New Loading State Logic ---
+
             projectProcesses.push(limitAnalysis(async () => {
                 const domData = extractDomData(element);
                 const fetchedData = await fetchProjectMetadata(domData);
@@ -642,36 +740,11 @@
 
                 let cachedAnalysisResult = analysisCache.get(analysisId);
                 if (!cachedAnalysisResult || (Date.now() - cachedAnalysisResult.lastFetched > analysisResultCacheDuration)) {
-                    let simalyzeAnalysisArea = element.querySelector('.simalyze-analysis-area');
-                    if (!simalyzeAnalysisArea) {
-                        simalyzeAnalysisArea = document.createElement('div');
-                        simalyzeAnalysisArea.classList.add('simalyze-analysis-area');
-                        simalyzeAnalysisArea.style.cssText = `
-                            margin-top: 5px;
-                            font-size: 13px;
-                            display: flex;
-                            align-items: center;
-                            gap: 5px;
-                            flex-wrap: wrap;
-                        `;
-                        const cardContentWrapper = element.querySelector('div.flex.flex-col.p-3');
-                        if (cardContentWrapper) {
-                            const cardFooterEl = element.querySelector('div.flex.justify-between.items-center.text-gray-500.dark\\:text-gray-400.mt-2.text-xs');
-                            if (cardFooterEl && cardFooterEl.parentNode === cardContentWrapper) {
-                                cardContentWrapper.insertBefore(simalyzeAnalysisArea, cardFooterEl.nextSibling);
-                            } else {
-                                cardContentWrapper.appendChild(simalyzeAnalysisArea); 
-                            }
-                        } else {
-                            element.appendChild(simalyzeAnalysisArea); 
-                        }
-                    }
-                    simalyzeAnalysisArea.innerHTML = '';
-                    simalyzeAnalysisArea.style.display = 'none';
-
-                    if (analyzerModeActive && !slopRemover2Active) {
-                        simalyzeAnalysisArea.innerHTML = `<span style="color: ${isHostDarkMode() ? '#bbb' : 'grey'};">Simalyze: Analyzing...</span>`;
-                        simalyzeAnalysisArea.style.display = 'flex';
+                    // Temporarily hide the loading analysis area if it was previously set below the image
+                    const simalyzeAnalysisArea = element.querySelector('.simalyze-analysis-area');
+                    if (simalyzeAnalysisArea) {
+                        simalyzeAnalysisArea.innerHTML = '';
+                        simalyzeAnalysisArea.style.display = 'none';
                     }
 
                     try {
@@ -691,38 +764,33 @@
 
                 const compositeScore = analysisResult?.compositeScore ?? 0;
 
-                const imageWrapper = element.querySelector('div.flex.w-full.h-full.relative.overflow-hidden');
-                const imgElement = imageWrapper ? imageWrapper.querySelector('img.object-cover') : null;
                 const textWrapper = element.querySelector('div.p-1.text-left.overflow-hidden');
-                let simalyzeBlockOverlay = element.querySelector('.simalyze-block-overlay');
                 let simalyzeHighlightIndicator = element.querySelector('.simalyze-highlight-indicator');
 
-                if (imageWrapper && !simalyzeBlockOverlay) {
-                    simalyzeBlockOverlay = document.createElement('div');
-                    simalyzeBlockOverlay.classList.add('simalyze-block-overlay');
-                    simalyzeBlockOverlay.style.cssText = `
-                        position: absolute;
-                        top: 0;
-                        left: 0;
-                        width: 100%;
-                        height: 100%;
+                // Ensure simalyzeAnalysisArea is created for final score display if needed
+                let simalyzeAnalysisArea = element.querySelector('.simalyze-analysis-area');
+                if (!simalyzeAnalysisArea) {
+                    simalyzeAnalysisArea = document.createElement('div');
+                    simalyzeAnalysisArea.classList.add('simalyze-analysis-area');
+                    simalyzeAnalysisArea.style.cssText = `
+                        margin-top: 5px;
+                        font-size: 13px;
                         display: flex;
-                        flex-direction: column;
-                        justify-content: center;
                         align-items: center;
-                        z-index: 10;
-                        background-color: ${isHostDarkMode() ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.9)'};
-                        border-radius: inherit;
-                        backdrop-filter: blur(5px);
-                        -webkit-backdrop-filter: blur(5px);
-                        text-align: center;
-                        pointer-events: auto; 
+                        gap: 5px;
+                        flex-wrap: wrap;
                     `;
-                    imageWrapper.appendChild(simalyzeBlockOverlay);
-                } else if (!imageWrapper && !simalyzeBlockOverlay) {
-                    simalyzeBlockOverlay = document.createElement('div');
-                    simalyzeBlockOverlay.classList.add('simalyze-block-overlay');
-                    element.appendChild(simalyzeBlockOverlay);
+                    const cardContentWrapper = element.querySelector('div.flex.flex-col.p-3');
+                    if (cardContentWrapper) {
+                        const cardFooterEl = element.querySelector('div.flex.justify-between.items-center.text-gray-500.dark\\:text-gray-400.mt-2.text-xs');
+                        if (cardFooterEl && cardFooterEl.parentNode === cardContentWrapper) {
+                            cardContentWrapper.insertBefore(simalyzeAnalysisArea, cardFooterEl.nextSibling);
+                        } else {
+                            cardContentWrapper.appendChild(simalyzeAnalysisArea); 
+                        }
+                    } else {
+                        element.appendChild(simalyzeAnalysisArea); 
+                    }
                 }
 
                 if (!simalyzeHighlightIndicator) {
@@ -748,14 +816,14 @@
                     element.appendChild(simalyzeHighlightIndicator);
                 }
 
+                // Reset states before applying new ones
                 element.classList.remove('simalyze-hidden', 'simalyze-blurred', 'simalyze-highlighted');
                 element.style.display = '';
-                if(simalyzeBlockOverlay) simalyzeBlockOverlay.style.display = 'none';
+                if(simalyzeProjectOverlay) simalyzeProjectOverlay.style.display = 'none';
                 simalyzeHighlightIndicator.style.display = 'none';
                 if (imgElement) imgElement.style.filter = '';
                 if (imageWrapper) imageWrapper.style.display = '';
                 if (textWrapper) textWrapper.style.display = '';
-                const simalyzeAnalysisArea = element.querySelector('.simalyze-analysis-area');
                 if (simalyzeAnalysisArea) simalyzeAnalysisArea.style.display = 'none';
 
                 const shouldBeHidden = slopRemover2Active && compositeScore < 30;
@@ -765,14 +833,15 @@
                 if (shouldBeHidden) {
                     element.style.display = 'none';
                     element.classList.add('simalyze-hidden');
-                } else if (shouldBeBlurred && simalyzeBlockOverlay) {
-                    simalyzeBlockOverlay.style.display = 'flex';
-                    simalyzeBlockOverlay.style.pointerEvents = 'auto';
-                    simalyzeBlockOverlay.innerHTML = `
+                } else if (shouldBeBlurred && element.dataset.simalyzeForceView !== "true") { // Only blur if not force-viewed
+                    simalyzeProjectOverlay.style.display = 'flex';
+                    simalyzeProjectOverlay.style.opacity = '1';
+                    simalyzeProjectOverlay.style.pointerEvents = 'auto';
+                    simalyzeProjectOverlay.innerHTML = `
                         <img src="${SIMALYZE_LOGO_URL}" alt="Simalyze Logo" style="width: 60px; height: 60px; margin-bottom: 10px; opacity: 0.8;">
                         <span style="font-size: 20px; font-weight: bold; color: ${currentColors.textColor}; margin-bottom: 5px;">This project is rated below 50.</span>
                         <span style="font-size: 16px; color: ${isHostDarkMode() ? '#ccc' : '#333'}; margin-bottom: 10px;">(Score: ${compositeScore.toFixed(0)})</span>
-                        <button class="simalyze-view-button" style="
+                        <button class="simalyze-view-details-button" style="
                             background-color: ${currentColors.buttonBg};
                             border: ${currentColors.thinStroke} solid ${currentColors.buttonBorder};
                             border-radius: ${currentColors.borderRadius};
@@ -782,29 +851,35 @@
                             color: ${currentColors.textColor};
                             transition: background-color 0.2s;
                             pointer-events: auto; 
-                        ">Are you sure you want to view it?</button>
+                        ">View Project & Details</button>
                     `;
-                    const viewButton = simalyzeBlockOverlay.querySelector('.simalyze-view-button');
-                    viewButton.onmouseover = () => { viewButton.style.backgroundColor = currentColors.buttonHover; };
-                    viewButton.onmouseout = () => { viewButton.style.backgroundColor = currentColors.buttonBg; };
-                    viewButton.onclick = (e) => {
+                    const viewDetailsButton = simalyzeProjectOverlay.querySelector('.simalyze-view-details-button');
+                    viewDetailsButton.onmouseover = () => { viewDetailsButton.style.backgroundColor = currentColors.buttonHover; };
+                    viewDetailsButton.onmouseout = () => { viewDetailsButton.style.backgroundColor = currentColors.buttonBg; };
+                    viewDetailsButton.onclick = (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        simalyzeBlockOverlay.style.display = 'none'; 
+                        simalyzeProjectOverlay.style.display = 'none'; 
                         element.classList.remove('simalyze-blurred');
                         if (imgElement) imgElement.style.filter = '';
                         if (analyzerModeActive && simalyzeAnalysisArea) {
                             simalyzeAnalysisArea.style.display = 'flex';
                         }
+                        showProjectDetailsModal(finalAnalysisData.title, analysisResult); 
                     };
                     element.classList.add('simalyze-blurred');
                     if (imgElement) imgElement.style.filter = `blur(5px)`;
-                } else {
+                } else { // Not hidden and not blurred (or force-viewed)
+                    // If force-viewed, ensure the overlay is hidden
+                    if (simalyzeProjectOverlay) simalyzeProjectOverlay.style.display = 'none';
+                    element.classList.remove('simalyze-blurred'); 
+                    if (imgElement) imgElement.style.filter = ''; 
+
                     if (shouldBeHighlighted) {
                         element.classList.add('simalyze-highlighted');
                         simalyzeHighlightIndicator.style.display = 'flex';
                         simalyzeHighlightIndicator.innerHTML = `
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.417 3.967 1.481-8.279-6.064-5.828 8.332-1.151z"/></svg>
+                            <img src="/good_project_icon.png" alt="Good Project" style="width: 14px; height: 14px;">
                             <span>Good!</span>
                         `;
                         element.style.border = `${currentColors.thinStroke} solid ${currentColors.highlightBorderColor}`;
@@ -893,6 +968,8 @@
             highlightBgColor: computedStyle.getPropertyValue('--simalyze-highlight-bg').trim() || fallback.highlightBgColor,
             highlightBorderColor: computedStyle.getPropertyValue('--simalyze-highlight-border').trim() || fallback.highlightBorderColor,
             highlightTextColor: computedStyle.getPropertyValue('--simalyze-highlight-text').trim() || fallback.highlightTextColor,
+            loadingSpinnerSize: computedStyle.getPropertyValue('--simalyze-loading-spinner-size').trim() || '30px',
+            loadingSpinnerColor: computedStyle.getPropertyValue('--simalyze-loading-spinner-color').trim() || 'var(--simalyze-score-neutral)',
         };
     }
 
@@ -1398,7 +1475,7 @@
                                 <li><strong>Project Maturity:</strong> Revision history and whether it's a published site.</li>
                                 <li><strong>Influence & Originality:</strong> Number of remixes and whether it was made from a template.</li>
                                 <li><strong>Code Complexity:</strong> Indirectly assessed through asset usage, revision frequency, and HTML script content.</li>
-                                <li><strong>Visual Presentation:</strong> Presence and number of screenshots.</li>
+                                <li><strong>Visual Presentation:</b> Presence and number of screenshots.</li>
                                 <li><strong>Overall Completeness:</strong> Presence of essential project metadata.</li>
                             </ul>
                             <p style="font-size: 15px; color: ${colors.textColor}; margin-top: 15px; text-align: left;">
