@@ -84,7 +84,7 @@ Join the SimPlug server to:
 
 ## 🧾 License
 
-Licensed under the **MIT License**.  
+Licensed under the **Apache License**.  
 All third-party plugins and CSS themes are the responsibility of their creators.
 
 ---
