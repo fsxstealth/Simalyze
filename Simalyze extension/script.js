@@ -1,11 +1,11 @@
-(async function() { 
+(async function() {
     let pLimit;
     try {
         const module = await import('p-limit');
-        pLimit = module.default; 
+        pLimit = module.default;
     } catch (e) {
         console.error("Simalyze: Failed to load p-limit module. Concurrency limiting will not be applied.", e);
-        pLimit = (concurrency) => (fn) => fn(); 
+        pLimit = (concurrency) => (fn) => fn();
     }
 
     const consoleHeaderStyle = 'font-size: 24px; color: black; text-shadow: none;';
@@ -15,7 +15,7 @@
     console.log('%cThanks for using %cWEBSIM SIMALYZE%c', consoleHeaderStyle, consoleRainbowStyle, '');
     console.log('%cBy FsX', consoleByFsXStyle);
 
-    let analyzerModeActive = JSON.parse(localStorage.getItem('simalyze_analyzerModeActive')) ?? false; 
+    let analyzerModeActive = JSON.parse(localStorage.getItem('simalyze_analyzerModeActive')) ?? false;
     /* @tweakable Enable or disable the mode that completely hides low-quality projects */
     let slopRemover2Active = JSON.parse(localStorage.getItem('simalyze_slopRemover2Active')) ?? false;
     /* @tweakable Enable or disable the mode that visually highlights high-quality projects */
@@ -32,28 +32,33 @@
     /* @tweakable A keyword phrase that, if found in the title or description, will penalize the project's score. */
     let unwantedKeyword = "Keyboard & Achievements";
     /* @tweakable The score penalty applied if the unwanted keyword is found in the project's title or description. */
-    let unwantedKeywordPenalty = -50; 
+    let unwantedKeywordPenalty = -50;
+
+    /* @tweakable Text for the 'View Project' button on blurred projects */
+    let viewProjectButtonText = "View Project";
+    /* @tweakable Text for the 'View Details' button on blurred projects */
+    let viewDetailsButtonText = "View Details";
 
     const projectDataCache = new Map();
     const creatorStatsCache = new Map();
     const analysisCache = new Map();
 
     /* @tweakable The maximum number of concurrent API requests */
-    const apiConcurrencyLimit = 5; 
+    const apiConcurrencyLimit = 5;
     /* @tweakable The maximum number of concurrent project analysis operations */
-    const analysisConcurrencyLimit = 1; 
+    const analysisConcurrencyLimit = 1;
 
-    const limitApi = pLimit(apiConcurrencyLimit); 
-    const limitAnalysis = pLimit(analysisConcurrencyLimit); 
+    const limitApi = pLimit(apiConcurrencyLimit);
+    const limitAnalysis = pLimit(analysisConcurrencyLimit);
 
     /* @tweakable Duration in milliseconds for how long project API data is cached */
-    const projectCacheDuration = 5 * 60 * 1000; 
+    const projectCacheDuration = 5 * 60 * 1000;
     /* @tweakable Duration in milliseconds for how long creator statistics are cached */
-    const creatorStatsCacheDuration = 5 * 60 * 1000; 
+    const creatorStatsCacheDuration = 5 * 60 * 1000;
     /* @tweakable Duration in milliseconds for how long asset counts are cached */
-    const assetsCacheDuration = 10 * 60 * 1000; 
+    const assetsCacheDuration = 10 * 60 * 1000;
     /* @tweakable Duration in milliseconds for how long project analysis results are cached */
-    const analysisResultCacheDuration = 10 * 60 * 1000; 
+    const analysisResultCacheDuration = 10 * 60 * 1000;
     /* @tweakable Duration in milliseconds for how long project revisions data is cached */
     const revisionsCacheDuration = 10 * 60 * 1000;
     /* @tweakable Duration in milliseconds for how long project screenshots data is cached */
@@ -67,6 +72,13 @@
     const SIMALYZE_LOGO_URL = 'https://raw.githubusercontent.com/fsxstealth/Quantum-Planner/main/lol.png';
     /* @tweakable URL for the "Visit My Profile" button */
     const FSX_PROFILE_URL = 'https://websim.com/@fsx/';
+
+    /* @tweakable SVG path for the 'Good Project' star icon */
+    const GOOD_PROJECT_ICON_SVG = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+        </svg>
+    `;
 
     function saveSettings() {
         localStorage.setItem('simalyze_analyzerModeActive', JSON.stringify(analyzerModeActive));
@@ -108,7 +120,7 @@
 
         const authorLinkElement = element.querySelector('a[href*="/@"]');
         const authorAvatarUrl = authorLinkElement?.querySelector('img')?.src || '';
-        const authorNameElement = authorLinkElement?.nextElementSibling; 
+        const authorNameElement = authorLinkElement?.nextElementSibling;
         const authorName = authorNameElement ? authorNameElement.textContent.trim() : '';
         const authorProfileLink = authorLinkElement?.href || '';
 
@@ -138,7 +150,7 @@
                 }
             }
         }
-        
+
         return {
             projectIdFromDom: projectIdFromDom,
             projectSlug: projectSlug,
@@ -305,7 +317,7 @@
                     screenshotsCount = cachedScreenshots.screenshotsCount;
                 }
             }
-            
+
             if (apiData?.project?.id) {
                 const statsCacheKey = `project_stats-${canonicalProjectId}`;
                 let cachedProjectStats = analysisCache.get(statsCacheKey);
@@ -368,7 +380,7 @@
     }
 
     async function analyzeProject(domData, fetchedData) {
-        let compositeScore = 50; 
+        let compositeScore = 50;
 
         const breakdown = {
             contentQuality: { scoreImpact: 0, reason: '' },
@@ -427,7 +439,7 @@
             contentQualityImpact -= 5;
             contentQualityReason.push('Content quality assessment limited (API data unavailable).');
         }
-        
+
         if (titleLength >= 15 && descriptionLength >= 30 && hasThumbnail && isProjectDataAvailable) { contentQualityImpact += 7; contentQualityReason.push('Good title, description, and thumbnail.'); }
 
         breakdown.contentQuality.scoreImpact = Math.round(contentQualityImpact);
@@ -439,7 +451,7 @@
 
         const likes = apiData?.project?.stats?.likes ?? domData.likesValue;
         const views = apiData?.project?.stats?.views ?? domData.viewsValue;
-        const comments = 0; 
+        const comments = 0;
 
         if (isProjectDataAvailable && apiData.project.stats) {
             if (likes > 500) { engagementImpact += 15; engagementReason.push('Very high likes.'); }
@@ -475,7 +487,7 @@
             else if (views > 2000) { engagementImpact += 10; engagementReason.push('High views (from DOM).'); }
             else if (views > 500) { engagementImpact += 5; engagementReason.push('Good views (from DOM).'); }
 
-            if (views > 1000 && likes < views / 50) { 
+            if (views > 1000 && likes < views / 50) {
                 engagementImpact -= 10;
                 engagementReason.push('Low likes relative to views (from DOM).');
             }
@@ -641,13 +653,13 @@
         const currentColors = getCurrentThemeProperties();
 
         const selector = 'a.flex.flex-col.bg-gray-100.dark\\:bg-neutral-900.w-full.h-auto.border.border-gray-300.dark\\:border-neutral-700.transition-colors';
-        const elementsToFilter = document.querySelectorAll(`${selector}:not([data-simalyzed="true"])`); 
+        const elementsToFilter = document.querySelectorAll(`${selector}:not([data-simalyzed="true"])`);
 
         const projectProcesses = [];
 
         for (const element of elementsToFilter) {
             element.dataset.simalyzed = "true";
-            
+
             // --- New Loading State Logic ---
             const imageWrapper = element.querySelector('div.flex.w-full.h-full.relative.overflow-hidden');
             const imgElement = imageWrapper ? imageWrapper.querySelector('img.object-cover') : null;
@@ -665,8 +677,8 @@
                     border-radius: inherit;
                     backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
                     text-align: center;
-                    pointer-events: auto; 
-                    opacity: 1; 
+                    pointer-events: auto;
+                    opacity: 1;
                     transition: opacity 0.3s ease-in-out;
                 `;
                 if (imageWrapper) {
@@ -698,7 +710,7 @@
                     cursor: pointer;
                     color: ${currentColors.textColor};
                     transition: background-color 0.2s;
-                    pointer-events: auto; 
+                    pointer-events: auto;
                     margin-top: 15px;
                 ">
                     ${bypassAnalysisButtonText}
@@ -749,13 +761,13 @@
 
                     try {
                         analysisResult = await analyzeProject(
-                            finalAnalysisData, 
+                            finalAnalysisData,
                             fetchedData
                         );
                         analysisCache.set(analysisId, { ...analysisResult, lastFetched: Date.now() });
                     } catch (error) {
                         console.error(`Simalyze: Project analysis failed for ${analysisId}:`, error);
-                        analysisResult = { compositeScore: 0, breakdown: {}, summary: 'Analysis failed.' }; 
+                        analysisResult = { compositeScore: 0, breakdown: {}, summary: 'Analysis failed.' };
                         analysisCache.set(analysisId, { ...analysisResult, lastFetched: Date.now() });
                     }
                 } else {
@@ -786,10 +798,10 @@
                         if (cardFooterEl && cardFooterEl.parentNode === cardContentWrapper) {
                             cardContentWrapper.insertBefore(simalyzeAnalysisArea, cardFooterEl.nextSibling);
                         } else {
-                            cardContentWrapper.appendChild(simalyzeAnalysisArea); 
+                            cardContentWrapper.appendChild(simalyzeAnalysisArea);
                         }
                     } else {
-                        element.appendChild(simalyzeAnalysisArea); 
+                        element.appendChild(simalyzeAnalysisArea);
                     }
                 }
 
@@ -841,45 +853,72 @@
                         <img src="${SIMALYZE_LOGO_URL}" alt="Simalyze Logo" style="width: 60px; height: 60px; margin-bottom: 10px; opacity: 0.8;">
                         <span style="font-size: 20px; font-weight: bold; color: ${currentColors.textColor}; margin-bottom: 5px;">This project is rated below 50.</span>
                         <span style="font-size: 16px; color: ${isHostDarkMode() ? '#ccc' : '#333'}; margin-bottom: 10px;">(Score: ${compositeScore.toFixed(0)})</span>
-                        <button class="simalyze-view-details-button" style="
-                            background-color: ${currentColors.buttonBg};
-                            border: ${currentColors.thinStroke} solid ${currentColors.buttonBorder};
-                            border-radius: ${currentColors.borderRadius};
-                            padding: 8px 15px;
-                            font-size: 14px;
-                            cursor: pointer;
-                            color: ${currentColors.textColor};
-                            transition: background-color 0.2s;
-                            pointer-events: auto; 
-                        ">View Project & Details</button>
+                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <button class="simalyze-view-project-button" style="
+                                background-color: ${currentColors.buttonBg};
+                                border: ${currentColors.thinStroke} solid ${currentColors.buttonBorder};
+                                border-radius: ${currentColors.borderRadius};
+                                padding: 8px 15px;
+                                font-size: 14px;
+                                cursor: pointer;
+                                color: ${currentColors.textColor};
+                                transition: background-color 0.2s;
+                                pointer-events: auto;
+                            ">
+                                ${viewProjectButtonText}
+                            </button>
+                            <button class="simalyze-view-details-button" style="
+                                background-color: ${currentColors.buttonBg};
+                                border: ${currentColors.thinStroke} solid ${currentColors.buttonBorder};
+                                border-radius: ${currentColors.borderRadius};
+                                padding: 8px 15px;
+                                font-size: 14px;
+                                cursor: pointer;
+                                color: ${currentColors.textColor};
+                                transition: background-color 0.2s;
+                                pointer-events: auto;
+                            ">
+                                ${viewDetailsButtonText}
+                            </button>
+                        </div>
                     `;
-                    const viewDetailsButton = simalyzeProjectOverlay.querySelector('.simalyze-view-details-button');
-                    viewDetailsButton.onmouseover = () => { viewDetailsButton.style.backgroundColor = currentColors.buttonHover; };
-                    viewDetailsButton.onmouseout = () => { viewDetailsButton.style.backgroundColor = currentColors.buttonBg; };
-                    viewDetailsButton.onclick = (e) => {
+
+                    const viewProjectBtn = simalyzeProjectOverlay.querySelector('.simalyze-view-project-button');
+                    viewProjectBtn.onmouseover = () => { viewProjectBtn.style.backgroundColor = currentColors.buttonHover; };
+                    viewProjectBtn.onmouseout = () => { viewProjectBtn.style.backgroundColor = currentColors.buttonBg; };
+                    viewProjectBtn.onclick = (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        simalyzeProjectOverlay.style.display = 'none'; 
-                        element.classList.remove('simalyze-blurred');
-                        if (imgElement) imgElement.style.filter = '';
-                        if (analyzerModeActive && simalyzeAnalysisArea) {
-                            simalyzeAnalysisArea.style.display = 'flex';
-                        }
-                        showProjectDetailsModal(finalAnalysisData.title, analysisResult); 
+                        simalyzeProjectOverlay.style.display = 'none'; // Hide the overlay
+                        element.classList.remove('simalyze-blurred'); // Remove the blur class
+                        if (imgElement) imgElement.style.filter = ''; // Remove the blur filter from image
+                        element.dataset.simalyzeForceView = "true"; // Mark to force view for future runs
+                    };
+
+                    const viewDetailsBtn = simalyzeProjectOverlay.querySelector('.simalyze-view-details-button');
+                    viewDetailsBtn.onmouseover = () => { viewDetailsBtn.style.backgroundColor = currentColors.buttonHover; };
+                    viewDetailsBtn.onmouseout = () => { viewDetailsBtn.style.backgroundColor = currentColors.buttonBg; };
+                    viewDetailsBtn.onclick = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // Do NOT hide the overlay or remove the blur from the image
+                        showProjectDetailsModal(finalAnalysisData.title, analysisResult);
                     };
                     element.classList.add('simalyze-blurred');
                     if (imgElement) imgElement.style.filter = `blur(5px)`;
                 } else { // Not hidden and not blurred (or force-viewed)
                     // If force-viewed, ensure the overlay is hidden
                     if (simalyzeProjectOverlay) simalyzeProjectOverlay.style.display = 'none';
-                    element.classList.remove('simalyze-blurred'); 
-                    if (imgElement) imgElement.style.filter = ''; 
+                    element.classList.remove('simalyze-blurred');
+                    if (imgElement) imgElement.style.filter = '';
 
                     if (shouldBeHighlighted) {
                         element.classList.add('simalyze-highlighted');
                         simalyzeHighlightIndicator.style.display = 'flex';
                         simalyzeHighlightIndicator.innerHTML = `
-                            <img src="/good_project_icon.png" alt="Good Project" style="width: 14px; height: 14px;">
+                            <div style="width: 14px; height: 14px; color: currentColor;">
+                                ${GOOD_PROJECT_ICON_SVG}
+                            </div>
                             <span>Good!</span>
                         `;
                         element.style.border = `${currentColors.thinStroke} solid ${currentColors.highlightBorderColor}`;
@@ -888,7 +927,7 @@
                     }
 
                     if (analyzerModeActive && compositeScore !== -1) {
-                        if (simalyzeAnalysisArea) { 
+                        if (simalyzeAnalysisArea) {
                             simalyzeAnalysisArea.style.display = 'flex';
                             simalyzeAnalysisArea.innerHTML = '';
 
@@ -1009,7 +1048,7 @@
         const modalHTML = `
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
-                
+
                 #simalyze-settings-modal-container {
                     position: fixed;
                     top: 0;
@@ -1078,7 +1117,7 @@
                     padding-top: 16px;
                     border-top: ${colors.thinStroke} solid ${colors.sectionBorder};
                     display: flex;
-                    justify-content: flex-end; 
+                    justify-content: flex-end;
                     flex-shrink: 0;
                 }
 
@@ -1108,7 +1147,7 @@
                 input::placeholder {
                     color: var(--placeholder-color, ${colors.inputPlaceholder});
                 }
-                
+
                 input[type="range"] {
                     -webkit-appearance: none;
                     width: 100%;
@@ -1362,7 +1401,7 @@
         const infoModalHTML = `
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
-                
+
                 #simalyze-info-modal-container {
                     position: fixed;
                     top: 0;
@@ -1631,12 +1670,12 @@
             };
 
             buttonContainer.appendChild(simalyzeButton);
-            return true; 
+            return true;
         }
-        return false; 
+        return false;
     }
 
-    let simalyzeButtonAdded = false; 
+    let simalyzeButtonAdded = false;
 
     function syncDarkMode() {
         if (document.documentElement.classList.contains('dark')) {
@@ -1685,10 +1724,10 @@
     applyCustomCSS();
 
     setTimeout(() => {
-        if (!simalyzeButtonAdded) { 
+        if (!simalyzeButtonAdded) {
             simalyzeButtonAdded = addSimalyzeSettingsButton();
         }
         applySlopRemover();
-    }, 1000); 
+    }, 1000);
 
 })();
