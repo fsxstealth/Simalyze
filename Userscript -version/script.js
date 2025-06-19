@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Websim Simalyze
 // @namespace    http://websim.ai/userscripts/simalyze
-// @version      1.0
+// @version      2.0
 // @description  Removes unwanted content and provides filtering options for WebSim based on a sophisticated algorithm using the full metadata API.
 // @author       FsX
 // @match        https://websim.com/*
@@ -12,14 +12,14 @@
 // @tweakable    Adjust the URLs where this script will run. Use '*' for wildcards.
 // ==/UserScript==
 
-(async function() { 
+(async function() {
     let pLimit;
     try {
         const module = await import('p-limit');
-        pLimit = module.default; 
+        pLimit = module.default;
     } catch (e) {
         console.error("Simalyze: Failed to load p-limit module. Concurrency limiting will not be applied.", e);
-        pLimit = (concurrency) => (fn) => fn(); 
+        pLimit = (concurrency) => (fn) => fn();
     }
 
     const consoleHeaderStyle = 'font-size: 24px; color: black; text-shadow: none;';
@@ -29,70 +29,51 @@
     console.log('%cThanks for using %cWEBSIM SIMALYZE%c', consoleHeaderStyle, consoleRainbowStyle, '');
     console.log('%cBy FsX', consoleByFsXStyle);
 
-    let analyzerModeActive = JSON.parse(localStorage.getItem('simalyze_analyzerModeActive')) ?? false; 
-    /* @tweakable Enable or disable the mode that completely hides low-quality projects */
+    let analyzerModeActive = JSON.parse(localStorage.getItem('simalyze_analyzerModeActive')) ?? false;
     let slopRemover2Active = JSON.parse(localStorage.getItem('simalyze_slopRemover2Active')) ?? false;
-    /* @tweakable Enable or disable the mode that visually highlights high-quality projects */
     let highlightGoodProjectsActive = JSON.parse(localStorage.getItem('simalyze_highlightGoodProjectsActive')) ?? false;
-    /* @tweakable The score threshold above which projects are highlighted as good */
     let highlightThreshold = JSON.parse(localStorage.getItem('simalyze_highlightThreshold')) ?? 75;
     let currentTheme = localStorage.getItem('simalyze_currentTheme') ?? 'gray';
     let customCSS = localStorage.getItem('simalyze_customCSS') ?? '';
 
-    /* @tweakable Text displayed when analysis is loading */
     let loadingAnalysisText = "Loading analysis...";
-    /* @tweakable Text for the button to skip analysis and view project */
     let bypassAnalysisButtonText = "View Project (Bypass Analysis)";
-    /* @tweakable A keyword phrase that, if found in the title or description, will penalize the project's score. */
     let unwantedKeyword = "Keyboard & Achievements";
-    /* @tweakable The score penalty applied if the unwanted keyword is found in the project's title or description. */
-    let unwantedKeywordPenalty = -50; 
+    let unwantedKeywordPenalty = -50;
 
-    /* @tweakable Text for the 'View Project' button on blurred projects */
     let viewProjectButtonText = "View Project";
-    /* @tweakable Text for the 'View Details' button on blurred projects */
     let viewDetailsButtonText = "View Details";
 
     const projectDataCache = new Map();
     const creatorStatsCache = new Map();
     const analysisCache = new Map();
 
-    /* @tweakable The maximum number of concurrent API requests */
-    const apiConcurrencyLimit = 5; 
-    /* @tweakable The maximum number of concurrent project analysis operations */
-    const analysisConcurrencyLimit = 1; 
+    const apiConcurrencyLimit = 5;
+    const analysisConcurrencyLimit = 1;
 
-    const limitApi = pLimit(apiConcurrencyLimit); 
-    const limitAnalysis = pLimit(analysisConcurrencyLimit); 
+    const limitApi = pLimit(apiConcurrencyLimit);
+    const limitAnalysis = pLimit(analysisConcurrencyLimit);
 
-    /* @tweakable Duration in milliseconds for how long project API data is cached */
-    const projectCacheDuration = 5 * 60 * 1000; 
-    /* @tweakable Duration in milliseconds for how long creator statistics are cached */
-    const creatorStatsCacheDuration = 5 * 60 * 1000; 
-    /* @tweakable Duration in milliseconds for how long asset counts are cached */
-    const assetsCacheDuration = 10 * 60 * 1000; 
-    /* @tweakable Duration in milliseconds for how long project analysis results are cached */
-    const analysisResultCacheDuration = 10 * 60 * 1000; 
-    /* @tweakable Duration in milliseconds for how long project revisions data is cached */
+    const projectCacheDuration = 5 * 60 * 1000;
+    const creatorStatsCacheDuration = 5 * 60 * 1000;
+    const assetsCacheDuration = 10 * 60 * 1000;
+    const analysisResultCacheDuration = 10 * 60 * 1000;
     const revisionsCacheDuration = 10 * 60 * 1000;
-    /* @tweakable Duration in milliseconds for how long project screenshots data is cached */
     const screenshotsCacheDuration = 10 * 60 * 1000;
-    /* @tweakable Duration in milliseconds for how long project descendants data is cached */
     const descendantsCacheDuration = 15 * 60 * 1000;
-    /* @tweakable Duration in milliseconds for how long project HTML content is cached */
     const htmlContentCacheDuration = 15 * 60 * 1000;
 
     const WEBSIM_API_BASE_URL = 'https://api.websim.com/api/v1';
     const SIMALYZE_LOGO_URL = 'https://raw.githubusercontent.com/fsxstealth/Quantum-Planner/main/lol.png';
-    /* @tweakable URL for the "Visit My Profile" button */
     const FSX_PROFILE_URL = 'https://websim.com/@fsx/';
 
-    /* @tweakable SVG path for the 'Good Project' star icon */
     const GOOD_PROJECT_ICON_SVG = `
         <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="currentColor" stroke="none">
             <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
         </svg>
     `;
+
+    const TIMER_LOADING_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="currentColor"> <path d="M13 5.07089C16.3923 5.55612 19 8.47353 19 12C19 15.866 15.866 19 12 19C8.13401 19 5 15.866 5 12C5 9.96159 5.87128 8.12669 7.26175 6.84738L5.84658 5.43221C4.09461 7.0743 3 9.40932 3 12C3 16.9706 7.02944 21 12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C11.662 3 11.3283 3.01863 11 3.05493V9.08551H13V5.07089Z" fill="currentColor"/> <path d="M7.70711 8.70708C7.31658 9.0976 7.31658 9.73077 7.70711 10.1213L10.5355 12.9497C10.9261 13.3402 11.5592 13.3402 11.9497 12.9497C12.3403 12.5592 12.3403 11.926 11.9497 11.5355L9.12132 8.70708C8.7308 8.31655 8.09763 8.31655 7.70711 8.70708Z" fill="currentColor"/> </svg>`;
 
     function saveSettings() {
         localStorage.setItem('simalyze_analyzerModeActive', JSON.stringify(analyzerModeActive));
@@ -134,7 +115,7 @@
 
         const authorLinkElement = element.querySelector('a[href*="/@"]');
         const authorAvatarUrl = authorLinkElement?.querySelector('img')?.src || '';
-        const authorNameElement = authorLinkElement?.nextElementSibling; 
+        const authorNameElement = authorLinkElement?.nextElementSibling;
         const authorName = authorNameElement ? authorNameElement.textContent.trim() : '';
         const authorProfileLink = authorLinkElement?.href || '';
 
@@ -164,7 +145,7 @@
                 }
             }
         }
-        
+
         return {
             projectIdFromDom: projectIdFromDom,
             projectSlug: projectSlug,
@@ -331,7 +312,7 @@
                     screenshotsCount = cachedScreenshots.screenshotsCount;
                 }
             }
-            
+
             if (apiData?.project?.id) {
                 const statsCacheKey = `project_stats-${canonicalProjectId}`;
                 let cachedProjectStats = analysisCache.get(statsCacheKey);
@@ -394,7 +375,7 @@
     }
 
     async function analyzeProject(domData, fetchedData) {
-        let compositeScore = 50; 
+        let compositeScore = 50;
 
         const breakdown = {
             contentQuality: { scoreImpact: 0, reason: '' },
@@ -434,7 +415,6 @@
         let contentQualityImpact = 0;
         let contentQualityReason = [];
 
-        // Check for unwanted keywords
         if (unwantedKeyword && (title.includes(unwantedKeyword.toLowerCase()) || description.includes(unwantedKeyword.toLowerCase()))) {
             contentQualityImpact += unwantedKeywordPenalty;
             contentQualityReason.push(`Contains unwanted keyword "${unwantedKeyword}" (${unwantedKeywordPenalty} penalty).`);
@@ -453,7 +433,7 @@
             contentQualityImpact -= 5;
             contentQualityReason.push('Content quality assessment limited (API data unavailable).');
         }
-        
+
         if (titleLength >= 15 && descriptionLength >= 30 && hasThumbnail && isProjectDataAvailable) { contentQualityImpact += 7; contentQualityReason.push('Good title, description, and thumbnail.'); }
 
         breakdown.contentQuality.scoreImpact = Math.round(contentQualityImpact);
@@ -465,7 +445,7 @@
 
         const likes = apiData?.project?.stats?.likes ?? domData.likesValue;
         const views = apiData?.project?.stats?.views ?? domData.viewsValue;
-        const comments = 0; 
+        const comments = 0;
 
         if (isProjectDataAvailable && apiData.project.stats) {
             if (likes > 500) { engagementImpact += 15; engagementReason.push('Very high likes.'); }
@@ -490,7 +470,7 @@
             }
             if (views > 500 && likes === 0) {
                 engagementImpact -= 7;
-                engagementReason.push('No engagement despite some views.');
+                engagementReason.push('No recorded engagement despite some views.');
             }
         } else {
             if (likes > 500) { engagementImpact += 15; engagementReason.push('Very high likes (from DOM).'); }
@@ -501,7 +481,7 @@
             else if (views > 2000) { engagementImpact += 10; engagementReason.push('High views (from DOM).'); }
             else if (views > 500) { engagementImpact += 5; engagementReason.push('Good views (from DOM).'); }
 
-            if (views > 1000 && likes < views / 50) { 
+            if (views > 1000 && likes < views / 50) {
                 engagementImpact -= 10;
                 engagementReason.push('Low likes relative to views (from DOM).');
             }
@@ -667,14 +647,13 @@
         const currentColors = getCurrentThemeProperties();
 
         const selector = 'a.flex.flex-col.bg-gray-100.dark\\:bg-neutral-900.w-full.h-auto.border.border-gray-300.dark\\:border-neutral-700.transition-colors';
-        const elementsToFilter = document.querySelectorAll(`${selector}:not([data-simalyzed="true"])`); 
+        const elementsToFilter = document.querySelectorAll(`${selector}:not([data-simalyzed="true"])`);
 
         const projectProcesses = [];
 
         for (const element of elementsToFilter) {
             element.dataset.simalyzed = "true";
-            
-            // --- New Loading State Logic ---
+
             const imageWrapper = element.querySelector('div.flex.w-full.h-full.relative.overflow-hidden');
             const imgElement = imageWrapper ? imageWrapper.querySelector('img.object-cover') : null;
 
@@ -691,40 +670,41 @@
                     border-radius: inherit;
                     backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
                     text-align: center;
-                    pointer-events: auto; 
-                    opacity: 1; 
-                    transition: opacity 0.3s ease-in-out;
+                    pointer-events: auto;
+                    opacity: 0;
+                    transition: opacity var(--simalyze-project-card-transition-duration) ease-in-out;
                 `;
                 if (imageWrapper) {
                     imageWrapper.appendChild(simalyzeProjectOverlay);
                 } else {
-                    // Fallback for elements without an imageWrapper (less common for projects)
                     element.appendChild(simalyzeProjectOverlay);
                 }
             }
-            // Force the project overlay to be visible initially to show loading state
             simalyzeProjectOverlay.style.display = 'flex';
             simalyzeProjectOverlay.style.opacity = '1';
 
-            // Set loading content for the overlay
             simalyzeProjectOverlay.innerHTML = `
-                <div class="simalyze-spinner" style="
-                    --simalyze-loading-spinner-size: var(--simalyze-loading-spinner-size);
-                    border-top-color: var(--simalyze-loading-spinner-color);
-                "></div>
+                <div style="
+                    width: ${currentColors.loadingSpinnerSize};
+                    height: ${currentColors.loadingSpinnerSize};
+                    color: ${currentColors.loadingSpinnerColor};
+                    animation: spin 1s linear infinite;
+                ">
+                    ${TIMER_LOADING_ICON_SVG}
+                </div>
                 <span style="font-size: 16px; font-weight: bold; color: ${currentColors.textColor}; margin-top: 10px;">
                     ${loadingAnalysisText}
                 </span>
                 <button class="simalyze-view-button-loading" style="
                     background-color: ${currentColors.buttonBg};
-                    border: ${currentColors.thinStroke} solid ${currentColors.buttonBorder};
-                    border-radius: ${currentColors.borderRadius};
+                    border: var(--simalyze-thin-stroke) solid ${currentColors.buttonBorder};
+                    border-radius: var(--simalyze-border-radius);
                     padding: 8px 15px;
                     font-size: 14px;
                     cursor: pointer;
                     color: ${currentColors.textColor};
-                    transition: background-color 0.2s;
-                    pointer-events: auto; 
+                    transition: background-color var(--simalyze-project-card-transition-duration);
+                    pointer-events: auto;
                     margin-top: 15px;
                 ">
                     ${bypassAnalysisButtonText}
@@ -736,11 +716,11 @@
             viewButtonLoading.onclick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                element.dataset.simalyzeForceView = "true"; // Mark to force view
-                simalyzeProjectOverlay.style.display = 'none'; // Hide the loading overlay
-                if (imgElement) imgElement.style.filter = ''; // Ensure no blur from the overlay
+                element.dataset.simalyzeForceView = "true";
+                simalyzeProjectOverlay.style.opacity = '0';
+                setTimeout(() => simalyzeProjectOverlay.style.display = 'none', currentColors.projectCardTransitionDuration);
+                if (imgElement) imgElement.style.filter = '';
             };
-            // --- End New Loading State Logic ---
 
             projectProcesses.push(limitAnalysis(async () => {
                 const domData = extractDomData(element);
@@ -766,22 +746,15 @@
 
                 let cachedAnalysisResult = analysisCache.get(analysisId);
                 if (!cachedAnalysisResult || (Date.now() - cachedAnalysisResult.lastFetched > analysisResultCacheDuration)) {
-                    // Temporarily hide the loading analysis area if it was previously set below the image
-                    const simalyzeAnalysisArea = element.querySelector('.simalyze-analysis-area');
-                    if (simalyzeAnalysisArea) {
-                        simalyzeAnalysisArea.innerHTML = '';
-                        simalyzeAnalysisArea.style.display = 'none';
-                    }
-
                     try {
                         analysisResult = await analyzeProject(
-                            finalAnalysisData, 
+                            finalAnalysisData,
                             fetchedData
                         );
                         analysisCache.set(analysisId, { ...analysisResult, lastFetched: Date.now() });
                     } catch (error) {
                         console.error(`Simalyze: Project analysis failed for ${analysisId}:`, error);
-                        analysisResult = { compositeScore: 0, breakdown: {}, summary: 'Analysis failed.' }; 
+                        analysisResult = { compositeScore: 0, breakdown: {}, summary: 'Analysis failed.' };
                         analysisCache.set(analysisId, { ...analysisResult, lastFetched: Date.now() });
                     }
                 } else {
@@ -793,7 +766,6 @@
                 const textWrapper = element.querySelector('div.p-1.text-left.overflow-hidden');
                 let simalyzeHighlightIndicator = element.querySelector('.simalyze-highlight-indicator');
 
-                // Ensure simalyzeAnalysisArea is created for final score display if needed
                 let simalyzeAnalysisArea = element.querySelector('.simalyze-analysis-area');
                 if (!simalyzeAnalysisArea) {
                     simalyzeAnalysisArea = document.createElement('div');
@@ -812,10 +784,10 @@
                         if (cardFooterEl && cardFooterEl.parentNode === cardContentWrapper) {
                             cardContentWrapper.insertBefore(simalyzeAnalysisArea, cardFooterEl.nextSibling);
                         } else {
-                            cardContentWrapper.appendChild(simalyzeAnalysisArea); 
+                            cardContentWrapper.appendChild(simalyzeAnalysisArea);
                         }
                     } else {
-                        element.appendChild(simalyzeAnalysisArea); 
+                        element.appendChild(simalyzeAnalysisArea);
                     }
                 }
 
@@ -836,17 +808,28 @@
                         background-color: var(--simalyze-highlight-bg);
                         padding: 3px 6px;
                         border-radius: var(--simalyze-border-radius);
-                        border: var(--simalyze-thin-stroke) solid var(--simalyze-highlight-border);
+                        border: var(--simalyze-highlight-border-thickness) solid var(--simalyze-highlight-border);
                         pointer-events: none;
+                        opacity: 0;
+                        transition: opacity var(--simalyze-project-card-transition-duration) ease-in-out;
                     `;
                     element.appendChild(simalyzeHighlightIndicator);
                 }
 
-                // Reset states before applying new ones
                 element.classList.remove('simalyze-hidden', 'simalyze-blurred', 'simalyze-highlighted');
-                element.style.display = '';
-                if(simalyzeProjectOverlay) simalyzeProjectOverlay.style.display = 'none';
+                element.style.opacity = '1';
+                element.style.pointerEvents = 'auto';
+                element.style.outline = '';
+                element.style.outlineOffset = '';
+                element.style.border = '';
+
+                if(simalyzeProjectOverlay) {
+                    simalyzeProjectOverlay.style.display = 'none';
+                    simalyzeProjectOverlay.style.opacity = '0';
+                    simalyzeProjectOverlay.style.pointerEvents = 'none';
+                }
                 simalyzeHighlightIndicator.style.display = 'none';
+                simalyzeHighlightIndicator.style.opacity = '0';
                 if (imgElement) imgElement.style.filter = '';
                 if (imageWrapper) imageWrapper.style.display = '';
                 if (textWrapper) textWrapper.style.display = '';
@@ -856,10 +839,17 @@
                 const shouldBeBlurred = analyzerModeActive && !shouldBeHidden && compositeScore < 50;
                 const shouldBeHighlighted = highlightGoodProjectsActive && !shouldBeHidden && compositeScore >= highlightThreshold;
 
+                element.style.transition = `opacity var(--simalyze-project-card-transition-duration) ease-in-out, outline var(--simalyze-project-card-transition-duration) ease-in-out`;
+
+
                 if (shouldBeHidden) {
-                    element.style.display = 'none';
-                    element.classList.add('simalyze-hidden');
-                } else if (shouldBeBlurred && element.dataset.simalyzeForceView !== "true") { // Only blur if not force-viewed
+                    element.style.opacity = '0';
+                    element.style.pointerEvents = 'none';
+                    setTimeout(() => {
+                        element.style.display = 'none';
+                        element.classList.add('simalyze-hidden');
+                    }, currentColors.projectCardTransitionDuration);
+                } else if (shouldBeBlurred && element.dataset.simalyzeForceView !== "true") {
                     simalyzeProjectOverlay.style.display = 'flex';
                     simalyzeProjectOverlay.style.opacity = '1';
                     simalyzeProjectOverlay.style.pointerEvents = 'auto';
@@ -870,27 +860,27 @@
                         <div style="display: flex; gap: 10px; margin-top: 15px;">
                             <button class="simalyze-view-project-button" style="
                                 background-color: ${currentColors.buttonBg};
-                                border: ${currentColors.thinStroke} solid ${currentColors.buttonBorder};
-                                border-radius: ${currentColors.borderRadius};
+                                border: var(--simalyze-thin-stroke) solid ${currentColors.buttonBorder};
+                                border-radius: var(--simalyze-border-radius);
                                 padding: 8px 15px;
                                 font-size: 14px;
                                 cursor: pointer;
                                 color: ${currentColors.textColor};
-                                transition: background-color 0.2s;
-                                pointer-events: auto; 
+                                transition: background-color var(--simalyze-project-card-transition-duration);
+                                pointer-events: auto;
                             ">
                                 ${viewProjectButtonText}
                             </button>
                             <button class="simalyze-view-details-button" style="
                                 background-color: ${currentColors.buttonBg};
-                                border: ${currentColors.thinStroke} solid ${currentColors.buttonBorder};
-                                border-radius: ${currentColors.borderRadius};
+                                border: var(--simalyze-thin-stroke) solid ${currentColors.buttonBorder};
+                                border-radius: var(--simalyze-border-radius);
                                 padding: 8px 15px;
                                 font-size: 14px;
                                 cursor: pointer;
                                 color: ${currentColors.textColor};
-                                transition: background-color 0.2s;
-                                pointer-events: auto; 
+                                transition: background-color var(--simalyze-project-card-transition-duration);
+                                pointer-events: auto;
                             ">
                                 ${viewDetailsButtonText}
                             </button>
@@ -903,10 +893,11 @@
                     viewProjectBtn.onclick = (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        simalyzeProjectOverlay.style.display = 'none'; // Hide the overlay
-                        element.classList.remove('simalyze-blurred'); // Remove the blur class
-                        if (imgElement) imgElement.style.filter = ''; // Remove the blur filter from image
-                        element.dataset.simalyzeForceView = "true"; // Mark to force view for future runs
+                        simalyzeProjectOverlay.style.opacity = '0';
+                        setTimeout(() => simalyzeProjectOverlay.style.display = 'none', currentColors.projectCardTransitionDuration);
+                        element.classList.remove('simalyze-blurred');
+                        if (imgElement) imgElement.style.filter = '';
+                        element.dataset.simalyzeForceView = "true";
                     };
 
                     const viewDetailsBtn = simalyzeProjectOverlay.querySelector('.simalyze-view-details-button');
@@ -915,33 +906,41 @@
                     viewDetailsBtn.onclick = (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        // Do NOT hide the overlay or remove the blur from the image
-                        showProjectDetailsModal(finalAnalysisData.title, analysisResult); 
+                        showProjectDetailsModal(finalAnalysisData.title, analysisResult);
                     };
                     element.classList.add('simalyze-blurred');
+                    if (imgElement) imgElement.style.transition = `filter var(--simalyze-project-card-transition-duration) ease-in-out`;
                     if (imgElement) imgElement.style.filter = `blur(5px)`;
-                } else { // Not hidden and not blurred (or force-viewed)
-                    // If force-viewed, ensure the overlay is hidden
-                    if (simalyzeProjectOverlay) simalyzeProjectOverlay.style.display = 'none';
-                    element.classList.remove('simalyze-blurred'); 
-                    if (imgElement) imgElement.style.filter = ''; 
+                } else {
+                    if (simalyzeProjectOverlay) {
+                         simalyzeProjectOverlay.style.opacity = '0';
+                         setTimeout(() => simalyzeProjectOverlay.style.display = 'none', currentColors.projectCardTransitionDuration);
+                    }
+                    element.classList.remove('simalyze-blurred');
+                    if (imgElement) imgElement.style.filter = '';
 
                     if (shouldBeHighlighted) {
                         element.classList.add('simalyze-highlighted');
                         simalyzeHighlightIndicator.style.display = 'flex';
+                        simalyzeHighlightIndicator.style.opacity = '1';
                         simalyzeHighlightIndicator.innerHTML = `
                             <div style="width: 14px; height: 14px; color: currentColor;">
                                 ${GOOD_PROJECT_ICON_SVG}
                             </div>
                             <span>Good!</span>
                         `;
-                        element.style.border = `${currentColors.thinStroke} solid ${currentColors.highlightBorderColor}`;
+                        element.style.outline = `${currentColors.highlightBorderThickness} solid ${currentColors.highlightBorderColor}`;
+                        element.style.outlineOffset = currentColors.highlightOutlineOffset;
+                        element.style.borderRadius = currentColors.borderRadius;
                     } else {
-                        element.style.border = '';
+                        element.style.outline = '';
+                        element.style.outlineOffset = '';
+                        simalyzeHighlightIndicator.style.opacity = '0';
+                        setTimeout(() => simalyzeHighlightIndicator.style.display = 'none', currentColors.projectCardTransitionDuration);
                     }
 
                     if (analyzerModeActive && compositeScore !== -1) {
-                        if (simalyzeAnalysisArea) { 
+                        if (simalyzeAnalysisArea) {
                             simalyzeAnalysisArea.style.display = 'flex';
                             simalyzeAnalysisArea.innerHTML = '';
 
@@ -961,13 +960,13 @@
                             detailsButton.textContent = 'Details';
                             detailsButton.style.cssText = `
                                 background-color: ${currentColors.buttonBg};
-                                border: ${currentColors.thinStroke} solid ${currentColors.buttonBorder};
-                                border-radius: ${currentColors.borderRadius};
+                                border: var(--simalyze-thin-stroke) solid ${currentColors.buttonBorder};
+                                border-radius: var(--simalyze-border-radius);
                                 padding: 2px 6px;
                                 font-size: 11px;
                                 cursor: pointer;
                                 color: ${currentColors.textColor};
-                                transition: background-color 0.2s;
+                                transition: background-color var(--simalyze-project-card-transition-duration);
                             `;
                             detailsButton.onmouseover = () => { detailsButton.style.backgroundColor = currentColors.buttonHover; };
                             detailsButton.onmouseout = () => { detailsButton.style.backgroundColor = currentColors.buttonBg; };
@@ -990,9 +989,9 @@
         const computedStyle = getComputedStyle(document.documentElement);
 
         const fallback = isHostDarkMode() ? {
-            fontFamily: "'Montserrat', sans-serif", mainBg: '#1a1a1a', modalBorder: '#333333', modalShadow: '0 8px 32px rgba(0, 0, 0, 0.5)', textColor: '#e0e0e0', textSecondaryColor: '#a0a0a0', headingColor: '#ffffff', sectionBorder: '#2f2f2f', buttonBg: 'rgba(255, 255, 255, 0.1)', buttonHover: 'rgba(255, 255, 255, 0.15)', buttonBorder: 'rgba(255, 255, 255, 0.2)', inputBg: '#252525', inputBorder: '#4a4a4a', inputColor: '#ffffff', inputPlaceholder: 'rgba(255, 255, 255, 0.5)', scoreGood: '#4ade80', scoreNeutral: '#9ca3af', scoreBad: '#f87171', sliderTrack: '#333', sliderThumb: '#999999', borderRadius: '12px', thinStroke: '1px', highlightBgColor: 'rgba(74, 222, 128, 0.1)', highlightBorderColor: '#4ade80', highlightTextColor: '#4ade80'
+            fontFamily: "'Montserrat', sans-serif", mainBg: '#1a1a1a', modalBorder: '#333333', modalShadow: '0 8px 32px rgba(0, 0, 0, 0.5)', textColor: '#e0e0e0', textSecondaryColor: '#a0a0a0', headingColor: '#ffffff', sectionBorder: '#2f2f2f', buttonBg: 'rgba(255, 255, 255, 0.1)', buttonHover: 'rgba(255, 255, 255, 0.15)', buttonBorder: 'rgba(255, 255, 255, 0.2)', inputBg: '#252525', inputBorder: '#4a4a4a', inputColor: '#ffffff', inputPlaceholder: 'rgba(255, 255, 255, 0.5)', scoreGood: '#4ade80', scoreNeutral: '#9ca3af', scoreBad: '#f87171', sliderTrack: '#333', sliderThumb: '#999999', borderRadius: '12px', thinStroke: '1px', highlightBgColor: 'rgba(74, 222, 128, 0.1)', highlightBorderColor: '#4ade80', highlightTextColor: '#4ade80', loadingSpinnerSize: '30px', loadingSpinnerColor: '#9ca3af', loadingSpinnerBorderThickness: '4px', highlightBorderThickness: '2px', highlightOutlineOffset: '0px', modalTransitionDuration: 300, modalEnterTransform: 'translateY(-20px)', modalExitTransform: 'translateY(-20px)', projectCardTransitionDuration: 300
         } : {
-            fontFamily: "'Montserrat', sans-serif", mainBg: '#ffffff', modalBorder: '#e0e0e0', modalShadow: '0 8px 32px rgba(0, 0, 0, 0.12)', textColor: '#333333', textSecondaryColor: '#555555', headingColor: '#000000', sectionBorder: '#eeeeee', buttonBg: '#f0f0f0', buttonHover: '#e0e0e0', buttonBorder: '#d0d0d0', inputBg: '#f8f8f8', inputBorder: '#dcdcdc', inputColor: '#000000', inputPlaceholder: 'rgba(0, 0, 0, 0.4)', scoreGood: '#22c55e', scoreNeutral: '#666666', scoreBad: '#ef4444', sliderTrack: '#e0e0e0', sliderThumb: '#666666', borderRadius: '12px', thinStroke: '1px', highlightBgColor: 'rgba(34, 197, 94, 0.1)', highlightBorderColor: '#22c55e', highlightTextColor: '#16a34a'
+            fontFamily: "'Montserrat', sans-serif", mainBg: '#ffffff', modalBorder: '#e0e0e0', modalShadow: '0 8px 32px rgba(0, 0, 0, 0.12)', textColor: '#333333', textSecondaryColor: '#555555', headingColor: '#000000', sectionBorder: '#eeeeee', buttonBg: '#f0f0f0', buttonHover: '#e0e0e0', buttonBorder: '#d0d0d0', inputBg: '#f8f8f8', inputBorder: '#dcdcdc', inputColor: '#000000', inputPlaceholder: 'rgba(0, 0, 0, 0.4)', scoreGood: '#22c55e', scoreNeutral: '#666666', scoreBad: '#ef4444', sliderTrack: '#e0e0e0', sliderThumb: '#666666', borderRadius: '12px', thinStroke: '1px', highlightBgColor: 'rgba(34, 197, 94, 0.1)', highlightBorderColor: '#22c55e', highlightTextColor: '#16a34a', loadingSpinnerSize: '30px', loadingSpinnerColor: '#666666', loadingSpinnerBorderThickness: '4px', highlightBorderThickness: '2px', highlightOutlineOffset: '0px', modalTransitionDuration: 300, modalEnterTransform: 'translateY(-20px)', modalExitTransform: 'translateY(-20px)', projectCardTransitionDuration: 300
         };
 
         return {
@@ -1021,37 +1020,50 @@
             highlightBgColor: computedStyle.getPropertyValue('--simalyze-highlight-bg').trim() || fallback.highlightBgColor,
             highlightBorderColor: computedStyle.getPropertyValue('--simalyze-highlight-border').trim() || fallback.highlightBorderColor,
             highlightTextColor: computedStyle.getPropertyValue('--simalyze-highlight-text').trim() || fallback.highlightTextColor,
-            loadingSpinnerSize: computedStyle.getPropertyValue('--simalyze-loading-spinner-size').trim() || '30px',
-            loadingSpinnerColor: computedStyle.getPropertyValue('--simalyze-loading-spinner-color').trim() || 'var(--simalyze-score-neutral)',
+            loadingSpinnerSize: computedStyle.getPropertyValue('--simalyze-loading-spinner-size').trim() || fallback.loadingSpinnerSize,
+            loadingSpinnerColor: computedStyle.getPropertyValue('--simalyze-loading-spinner-color').trim() || fallback.loadingSpinnerColor,
+            loadingSpinnerBorderThickness: computedStyle.getPropertyValue('--simalyze-loading-spinner-border-thickness').trim() || fallback.loadingSpinnerBorderThickness,
+            highlightBorderThickness: computedStyle.getPropertyValue('--simalyze-highlight-border-thickness').trim() || fallback.highlightBorderThickness,
+            highlightOutlineOffset: computedStyle.getPropertyValue('--simalyze-highlight-outline-offset').trim() || fallback.highlightOutlineOffset,
+            modalTransitionDuration: parseInt(computedStyle.getPropertyValue('--simalyze-modal-transition-duration')) || fallback.modalTransitionDuration,
+            modalEnterTransform: computedStyle.getPropertyValue('--simalyze-modal-enter-transform').trim() || fallback.modalEnterTransform,
+            modalExitTransform: computedStyle.getPropertyValue('--simalyze-modal-exit-transform').trim() || fallback.modalExitTransform,
+            projectCardTransitionDuration: parseInt(computedStyle.getPropertyValue('--simalyze-project-card-transition-duration')) || fallback.projectCardTransitionDuration,
         };
     }
 
     function showSettingsModal() {
-        /* @tweakable Maximum width of the settings modal */
         const settingsModalMaxWidth = '600px';
-        /* @tweakable Padding for the settings modal content on desktop */
         const settingsModalPadding = '24px';
-        /* @tweakable Padding for the settings modal content on mobile */
         const settingsModalPaddingMobile = '16px';
-        /* @tweakable Gap between sections in the settings modal */
         const settingsModalSectionGap = '20px';
 
         let modalHost = document.getElementById('simalyze-settings-modal-host');
+        const colors = getCurrentThemeProperties();
+
         if (modalHost) {
             const container = modalHost.shadowRoot.getElementById('simalyze-settings-modal-container');
-            if (container.style.display === 'flex') {
-                container.style.display = 'none';
+            const content = modalHost.shadowRoot.getElementById('simalyze-settings-modal-content');
+            if (container.style.opacity === '1') {
+                content.style.animation = `simalyze-slide-out-to-top ${colors.modalTransitionDuration}ms ease-out forwards`;
+                container.style.opacity = '0';
+                container.style.pointerEvents = 'none';
+                setTimeout(() => {
+                    container.style.display = 'none';
+                    content.style.animation = '';
+                }, colors.modalTransitionDuration);
             } else {
                 container.style.display = 'flex';
-                const newColors = getCurrentThemeProperties();
-                const content = modalHost.shadowRoot.getElementById('simalyze-settings-modal-content');
-                content.style.background = newColors.mainBg;
-                content.style.color = newColors.textColor;
+                content.style.background = colors.mainBg;
+                content.style.color = colors.textColor;
+                setTimeout(() => {
+                    content.style.animation = `simalyze-slide-in-from-top ${colors.modalTransitionDuration}ms ease-out forwards`;
+                    container.style.opacity = '1';
+                    container.style.pointerEvents = 'auto';
+                }, 10);
             }
             return;
         }
-
-        const colors = getCurrentThemeProperties();
 
         modalHost = document.createElement('div');
         modalHost.id = 'simalyze-settings-modal-host';
@@ -1062,7 +1074,7 @@
         const modalHTML = `
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
-                
+
                 #simalyze-settings-modal-container {
                     position: fixed;
                     top: 0;
@@ -1078,6 +1090,9 @@
                     z-index: 10000;
                     font-family: ${colors.fontFamily};
                     box-sizing: border-box;
+                    opacity: 0;
+                    pointer-events: none;
+                    transition: opacity ${colors.modalTransitionDuration}ms ease-in-out;
                 }
 
                 #simalyze-settings-modal-content {
@@ -1091,8 +1106,9 @@
                     position: relative;
                     display: flex;
                     flex-direction: column;
-                    border: ${colors.thinStroke} solid ${colors.modalBorder};
+                    border: var(--simalyze-thin-stroke) solid ${colors.modalBorder};
                     max-height: 90vh;
+                    transform: ${colors.modalEnterTransform};
                 }
 
                 #simalyze-modal-header {
@@ -1100,7 +1116,7 @@
                     justify-content: space-between;
                     align-items: center;
                     padding-bottom: 16px;
-                    border-bottom: ${colors.thinStroke} solid ${colors.sectionBorder};
+                    border-bottom: var(--simalyze-thin-stroke) solid ${colors.sectionBorder};
                     flex-shrink: 0;
                 }
 
@@ -1129,12 +1145,15 @@
 
                 #simalyze-modal-footer {
                     padding-top: 16px;
-                    border-top: ${colors.thinStroke} solid ${colors.sectionBorder};
+                    border-top: var(--simalyze-thin-stroke) solid ${colors.sectionBorder};
                     display: flex;
-                    justify-content: flex-end; 
+                    justify-content: flex-end;
                     flex-shrink: 0;
                 }
 
+                .simalyze-modal-button {
+                    transition: background-color var(--simalyze-project-card-transition-duration), border-color var(--simalyze-project-card-transition-duration);
+                }
                 .simalyze-modal-button:hover {
                     background-color: ${colors.buttonHover} !important;
                     border-color: ${colors.buttonHover} !important;
@@ -1161,15 +1180,15 @@
                 input::placeholder {
                     color: var(--placeholder-color, ${colors.inputPlaceholder});
                 }
-                
+
                 input[type="range"] {
                     -webkit-appearance: none;
                     width: 100%;
                     height: 8px;
                     background: ${colors.sliderTrack};
-                    border-radius: ${colors.borderRadius};
+                    border-radius: var(--simalyze-border-radius);
                     outline: none;
-                    transition: background 0.2s;
+                    transition: background var(--simalyze-project-card-transition-duration);
                 }
                 input[type="range"]::-webkit-slider-thumb {
                     -webkit-appearance: none;
@@ -1180,7 +1199,7 @@
                     border-radius: 50%;
                     cursor: grab;
                     box-shadow: 0 0 5px rgba(0,0,0,0.3);
-                    transition: transform 0.2s;
+                    transition: transform var(--simalyze-project-card-transition-duration);
                 }
                 input[type="range"]::-webkit-slider-thumb:active {
                     cursor: grabbing;
@@ -1224,12 +1243,12 @@
                             Websim Simalyze
                         </h2>
                         <div style="display: flex; gap: 8px;">
-                            <button id="simalyze-info-button" class="simalyze-modal-button" style="background: ${colors.buttonBg}; border: ${colors.thinStroke} solid ${colors.buttonBorder}; font-size: 20px; cursor: pointer; color: ${colors.headingColor}; padding: 5px; border-radius: ${colors.borderRadius}; transition: background-color 0.2s, border-color 0.2s; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;">
+                            <button id="simalyze-info-button" class="simalyze-modal-button" style="background: ${colors.buttonBg}; border: var(--simalyze-thin-stroke) solid ${colors.buttonBorder}; font-size: 20px; cursor: pointer; color: ${colors.headingColor}; padding: 5px; border-radius: ${colors.borderRadius}; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: ${colors.headingColor};">
                                     <circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path>
                                 </svg>
                             </button>
-                            <button id="simalyze-close-button" class="simalyze-modal-button" style="background: ${colors.buttonBg}; border: ${colors.thinStroke} solid ${colors.buttonBorder}; font-size: 24px; cursor: pointer; color: ${colors.headingColor}; padding: 5px; border-radius: ${colors.borderRadius}; transition: background-color 0.2s, border-color 0.2s; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;">
+                            <button id="simalyze-close-button" class="simalyze-modal-button" style="background: ${colors.buttonBg}; border: var(--simalyze-thin-stroke) solid ${colors.buttonBorder}; font-size: 24px; cursor: pointer; color: ${colors.headingColor}; padding: 5px; border-radius: ${colors.borderRadius}; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: ${colors.headingColor};">
                                     <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
                                 </svg>
@@ -1238,7 +1257,7 @@
                     </div>
 
                     <div id="simalyze-modal-body">
-                        <div style="background: rgba(0,0,0,0.02); border: 1px solid ${colors.sectionBorder}; padding: 16px; border-radius: ${colors.borderRadius};">
+                        <div style="background: rgba(0,0,0,0.02); border: var(--simalyze-thin-stroke) solid ${colors.sectionBorder}; padding: 16px; border-radius: ${colors.borderRadius};">
                             <h3 style="font-size: 16px; font-weight: bold; color: ${colors.headingColor}; margin: 0 0 12px 0;">Filter & Display Modes</h3>
                             <div style="display: flex; flex-direction: column; gap: 12px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -1265,21 +1284,21 @@
                             </div>
                         </div>
 
-                        <div style="background: rgba(0,0,0,0.02); border: 1px solid ${colors.sectionBorder}; padding: 16px; border-radius: ${colors.borderRadius};">
+                        <div style="background: rgba(0,0,0,0.02); border: var(--simalyze-thin-stroke) solid ${colors.sectionBorder}; padding: 16px; border-radius: ${colors.borderRadius};">
                             <h3 style="font-size: 16px; font-weight: bold; color: ${colors.headingColor}; margin: 0 0 12px 0;">Appearance</h3>
                             <div style="display: flex; flex-direction: column; gap: 16px;">
                                 <div>
                                     <label for="custom-css-textarea" style="font-size: 14px; color: ${colors.textColor}; display: block; margin-bottom: 8px;">Custom CSS</label>
                                     <textarea id="custom-css-textarea" class="simalyze-textarea" placeholder="Enter your custom CSS here..."></textarea>
                                     <div style="display: flex; gap: 8px; margin-top: 8px;">
-                                        <button id="apply-css-button" class="simalyze-modal-button" style="flex-grow: 1; background: ${colors.buttonBg}; border: ${colors.thinStroke} solid ${colors.buttonBorder}; font-size: 13px; cursor: pointer; color: ${colors.textColor}; padding: 6px 12px; border-radius: ${colors.borderRadius};">Apply & Save</button>
-                                            <button id="clear-css-button" class="simalyze-modal-button" style="background: ${colors.buttonBg}; border: ${colors.thinStroke} solid ${colors.buttonBorder}; font-size: 13px; cursor: pointer; color: ${colors.textColor}; padding: 6px 12px; border-radius: ${colors.borderRadius};">Clear</button>
+                                        <button id="apply-css-button" class="simalyze-modal-button" style="flex-grow: 1; background: ${colors.buttonBg}; border: var(--simalyze-thin-stroke) solid ${colors.buttonBorder}; font-size: 13px; cursor: pointer; color: ${colors.textColor}; padding: 6px 12px; border-radius: ${colors.borderRadius};">Apply & Save</button>
+                                            <button id="clear-css-button" class="simalyze-modal-button" style="background: ${colors.buttonBg}; border: var(--simalyze-thin-stroke) solid ${colors.buttonBorder}; font-size: 13px; cursor: pointer; color: ${colors.textColor}; padding: 6px 12px; border-radius: ${colors.borderRadius};">Clear</button>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div style="background: rgba(0,0,0,0.02); border: 1px solid ${colors.sectionBorder}; padding: 16px; border-radius: ${colors.borderRadius};">
+                        <div style="background: rgba(0,0,0,0.02); border: var(--simalyze-thin-stroke) solid ${colors.sectionBorder}; padding: 16px; border-radius: ${colors.borderRadius};">
                             <h3 style="font-size: 16px; font-weight: bold; color: ${colors.headingColor}; margin: 0 0 12px 0;">Highlight Threshold</h3>
                             <div style="margin-top: 10px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -1293,13 +1312,13 @@
                     <div id="simalyze-modal-footer">
                         <button id="visit-profile-button" class="simalyze-modal-button" style="
                             background: ${colors.buttonBg};
-                            border: ${colors.thinStroke} solid ${colors.buttonBorder};
+                            border: var(--simalyze-thin-stroke) solid ${colors.buttonBorder};
                             border-radius: ${colors.borderRadius};
                             padding: 8px 15px;
                             font-size: 14px;
                             cursor: pointer;
                             color: ${colors.textColor};
-                            transition: background-color 0.2s, border-color 0.2s;
+                            transition: background-color var(--simalyze-project-card-transition-duration), border-color var(--simalyze-project-card-transition-duration);
                             padding-left: 15px;
                             padding-right: 15px;
                         ">Visit My Profile</button>
@@ -1308,6 +1327,15 @@
             </div>
         `;
         shadowRoot.innerHTML = modalHTML;
+
+        const container = shadowRoot.getElementById('simalyze-settings-modal-container');
+        const content = shadowRoot.getElementById('simalyze-settings-modal-content');
+        container.style.display = 'flex';
+        setTimeout(() => {
+            content.style.animation = `simalyze-slide-in-from-top ${colors.modalTransitionDuration}ms ease-out forwards`;
+            container.style.opacity = '1';
+            container.style.pointerEvents = 'auto';
+        }, 10);
 
         const closeButton = shadowRoot.getElementById('simalyze-close-button');
         const infoButton = shadowRoot.getElementById('simalyze-info-button');
@@ -1319,7 +1347,13 @@
         const visitProfileButton = shadowRoot.getElementById('visit-profile-button');
 
         closeButton.onclick = () => {
-            shadowRoot.getElementById('simalyze-settings-modal-container').style.display = 'none';
+            content.style.animation = `simalyze-slide-out-to-top ${colors.modalTransitionDuration}ms ease-out forwards`;
+            container.style.opacity = '0';
+            container.style.pointerEvents = 'none';
+            setTimeout(() => {
+                container.style.display = 'none';
+                content.style.animation = '';
+            }, colors.modalTransitionDuration);
         };
         closeButton.onmouseover = () => { closeButton.style.backgroundColor = colors.buttonHover; };
         closeButton.onmouseout = () => { closeButton.style.backgroundColor = colors.buttonBg; };
@@ -1391,31 +1425,35 @@
 
     function showInfoModal() {
         let infoModalHost = document.getElementById('simalyze-info-modal-host');
+        const colors = getCurrentThemeProperties();
+        let shadowRoot;
+
         if (infoModalHost) {
-            const container = infoModalHost.shadowRoot.getElementById('simalyze-info-modal-container');
+            shadowRoot = infoModalHost.shadowRoot;
+            const container = shadowRoot.getElementById('simalyze-info-modal-container');
+            const content = shadowRoot.getElementById('simalyze-info-modal-content');
             container.style.display = 'flex';
+            setTimeout(() => {
+                content.style.animation = `simalyze-slide-in-from-top ${colors.modalTransitionDuration}ms ease-out forwards`;
+                container.style.opacity = '1';
+                container.style.pointerEvents = 'auto';
+            }, 10);
             return;
+        } else {
+            infoModalHost = document.createElement('div');
+            infoModalHost.id = 'simalyze-info-modal-host';
+            document.body.appendChild(infoModalHost);
+            shadowRoot = infoModalHost.attachShadow({ mode: 'open' });
         }
 
-        const colors = getCurrentThemeProperties();
-
-        infoModalHost = document.createElement('div');
-        infoModalHost.id = 'simalyze-info-modal-host';
-        document.body.appendChild(infoModalHost);
-
-        const shadowRoot = infoModalHost.attachShadow({ mode: 'open' });
-
-        /* @tweakable Maximum width of the info modal */
         const infoModalMaxWidth = '550px';
-        /* @tweakable Padding for the info modal content on desktop */
         const infoModalPadding = '24px';
-        /* @tweakable Padding for the info modal content on mobile */
         const infoModalPaddingMobile = '16px';
 
         const infoModalHTML = `
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
-                
+
                 #simalyze-info-modal-container {
                     position: fixed;
                     top: 0;
@@ -1431,6 +1469,9 @@
                     z-index: 10001;
                     font-family: 'Montserrat', sans-serif;
                     box-sizing: border-box;
+                    opacity: 0;
+                    pointer-events: none;
+                    transition: opacity ${colors.modalTransitionDuration}ms ease-in-out;
                 }
 
                 #simalyze-info-modal-content {
@@ -1444,8 +1485,9 @@
                     position: relative;
                     display: flex;
                     flex-direction: column;
-                    border: ${colors.thinStroke} solid ${colors.modalBorder};
+                    border: var(--simalyze-thin-stroke) solid ${colors.modalBorder};
                     max-height: 90vh;
+                    transform: ${colors.modalEnterTransform};
                 }
 
                 #simalyze-info-modal-header {
@@ -1453,7 +1495,7 @@
                     justify-content: space-between;
                     align-items: center;
                     padding-bottom: 16px;
-                    border-bottom: ${colors.thinStroke} solid ${colors.sectionBorder};
+                    border-bottom: var(--simalyze-thin-stroke) solid ${colors.sectionBorder};
                     flex-shrink: 0;
                 }
 
@@ -1480,6 +1522,9 @@
                     border: 2px solid ${colors.mainBg};
                 }
 
+                .simalyze-modal-button {
+                    transition: background-color var(--simalyze-project-card-transition-duration), border-color var(--simalyze-project-card-transition-duration);
+                }
                 .simalyze-modal-button:hover {
                     background-color: ${colors.buttonHover} !important;
                     border-color: ${colors.buttonHover} !important;
@@ -1510,7 +1555,7 @@
                             <img src="${SIMALYZE_LOGO_URL}" alt="Simalyze Logo" style="width: 32px; height: 32px; border-radius: 50%;">
                             Websim Simalyze Info
                         </h3>
-                        <button id="simalyze-info-close-button" class="simalyze-modal-button" style="background: ${colors.buttonBg}; border: ${colors.thinStroke} solid ${colors.buttonBorder}; font-size: 20px; cursor: pointer; color: ${colors.headingColor}; padding: 5px; border-radius: ${colors.borderRadius}; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;">
+                        <button id="simalyze-info-close-button" class="simalyze-modal-button" style="background: ${colors.buttonBg}; border: var(--simalyze-thin-stroke) solid ${colors.buttonBorder}; font-size: 20px; cursor: pointer; color: ${colors.headingColor}; padding: 5px; border-radius: ${colors.borderRadius}; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; transition: background-color var(--simalyze-project-card-transition-duration), border-color var(--simalyze-project-card-transition-duration);">
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: ${colors.headingColor};">
                                 <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
                             </svg>
@@ -1528,7 +1573,7 @@
                                 <li><strong>Project Maturity:</strong> Revision history and whether it's a published site.</li>
                                 <li><strong>Influence & Originality:</strong> Number of remixes and whether it was made from a template.</li>
                                 <li><strong>Code Complexity:</strong> Indirectly assessed through asset usage, revision frequency, and HTML script content.</li>
-                                <li><strong>Visual Presentation:</b> Presence and number of screenshots.</li>
+                                <li><strong>Visual Presentation:</strong> Presence and number of screenshots.</li>
                                 <li><strong>Overall Completeness:</strong> Presence of essential project metadata.</li>
                             </ul>
                             <p style="font-size: 15px; color: ${colors.textColor}; margin-top: 15px; text-align: left;">
@@ -1549,9 +1594,24 @@
         `;
         shadowRoot.innerHTML = infoModalHTML;
 
+        const container = shadowRoot.getElementById('simalyze-info-modal-container');
+        const content = shadowRoot.getElementById('simalyze-info-modal-content');
+        container.style.display = 'flex';
+        setTimeout(() => {
+            content.style.animation = `simalyze-slide-in-from-top ${colors.modalTransitionDuration}ms ease-out forwards`;
+            container.style.opacity = '1';
+            container.style.pointerEvents = 'auto';
+        }, 10);
+
         const infoCloseButton = shadowRoot.getElementById('simalyze-info-close-button');
         infoCloseButton.onclick = () => {
-            shadowRoot.getElementById('simalyze-info-modal-container').style.display = 'none';
+            content.style.animation = `simalyze-slide-out-to-top ${colors.modalTransitionDuration}ms ease-out forwards`;
+            container.style.opacity = '0';
+            container.style.pointerEvents = 'none';
+            setTimeout(() => {
+                container.style.display = 'none';
+                content.style.animation = '';
+            }, colors.modalTransitionDuration);
         };
         infoCloseButton.onmouseover = () => { infoCloseButton.style.backgroundColor = colors.buttonHover; };
         infoCloseButton.onmouseout = () => { infoCloseButton.style.backgroundColor = colors.buttonBg; };
@@ -1564,6 +1624,15 @@
 
         if (detailsModalHost) {
             shadowRoot = detailsModalHost.shadowRoot;
+            const container = shadowRoot.getElementById('simalyze-details-modal-container');
+            const content = shadowRoot.getElementById('simalyze-details-modal-content');
+            container.style.display = 'flex';
+            setTimeout(() => {
+                content.style.animation = `simalyze-slide-in-from-top ${colors.modalTransitionDuration}ms ease-out forwards`;
+                container.style.opacity = '1';
+                container.style.pointerEvents = 'auto';
+            }, 10);
+            return;
         } else {
             detailsModalHost = document.createElement('div');
             detailsModalHost.id = 'simalyze-details-modal-host';
@@ -1584,30 +1653,33 @@
         const detailsModalHTML = `
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
+                .simalyze-modal-button {
+                    transition: background-color var(--simalyze-project-card-transition-duration), border-color var(--simalyze-project-card-transition-duration);
+                }
                 .simalyze-modal-button:hover {
                     background-color: ${colors.buttonHover} !important;
                     border-color: ${colors.buttonHover} !important;
                 }
             </style>
-            <div id="simalyze-details-modal-container" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 10002; font-family: 'Montserrat', sans-serif; overflow: auto;">
-                <div id="simalyze-details-modal-content" style="background: ${colors.mainBg}; padding: 10px; border-radius: ${colors.borderRadius}; box-shadow: ${colors.modalShadow}; width: 90%; max-width: 600px; max-height: 90vh; box-sizing: border-box; position: relative; display: flex; flex-direction: column; border: ${colors.thinStroke} solid ${colors.modalBorder};">
+            <div id="simalyze-details-modal-container" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 10002; font-family: 'Montserrat', sans-serif; overflow: auto; opacity: 0; pointer-events: none; transition: opacity ${colors.modalTransitionDuration}ms ease-in-out;">
+                <div id="simalyze-details-modal-content" style="background: ${colors.mainBg}; padding: 10px; border-radius: ${colors.borderRadius}; box-shadow: ${colors.modalShadow}; width: 90%; max-width: 600px; max-height: 90vh; box-sizing: border-box; position: relative; display: flex; flex-direction: column; border: var(--simalyze-thin-stroke) solid ${colors.modalBorder}; transform: ${colors.modalEnterTransform};">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <h2 style="font-size: 20px; font-weight: bold; color: ${colors.headingColor};">Analysis: ${projectTitle}</h2>
-                        <button id="simalyze-details-close-button" class="simalyze-modal-button" style="background: ${colors.buttonBg}; border: ${colors.thinStroke} solid ${colors.buttonBorder}; font-size: 24px; cursor: pointer; color: ${colors.headingColor}; padding: 5px; border-radius: ${colors.borderRadius}; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s, border-color 0.2s;">
+                        <button id="simalyze-details-close-button" class="simalyze-modal-button" style="background: ${colors.buttonBg}; border: var(--simalyze-thin-stroke) solid ${colors.buttonBorder}; font-size: 24px; cursor: pointer; color: ${colors.headingColor}; padding: 5px; border-radius: ${colors.borderRadius}; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; transition: background-color var(--simalyze-project-card-transition-duration), border-color var(--simalyze-project-card-transition-duration);">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: ${colors.headingColor};">
                                 <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
                             </svg>
                         </button>
                     </div>
                     <div style="flex-grow: 1; overflow-y: auto; padding-bottom: 5px; display: flex; flex-direction: column; gap: 10px;">
-                        <div style="text-align: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: ${colors.thinStroke} solid ${colors.sectionBorder};">
+                        <div style="text-align: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: var(--simalyze-thin-stroke) solid ${colors.sectionBorder};">
                             <h3 style="font-size: 18px; font-weight: bold; color: ${colors.headingColor}; margin-bottom: 5px;">Composite Quality Score</h3>
                             <div style="font-size: 48px; font-weight: 700; color: ${typeof analysisResult.compositeScore === 'number' ? (analysisResult.compositeScore > 70 ? colors.scoreGood : (analysisResult.compositeScore < 50 ? colors.scoreBad : colors.scoreNeutral)): colors.scoreNeutral};">
                                 ${analysisResult.compositeScore}
                             </div>
                             <p style="font-size: 14px; color: ${colors.textColor}; margin-top: 5px;">${analysisResult.summary || 'No summary available.'}</p>
                         </div>
-                        <div style="padding-top: 10px; border-top: ${colors.thinStroke} solid ${colors.sectionBorder};">
+                        <div style="padding-top: 10px; border-top: var(--simalyze-thin-stroke) solid ${colors.sectionBorder};">
                             <h3 style="font-size: 16px; font-weight: bold; color: ${colors.headingColor}; margin-bottom: 10px;">Scoring Breakdown</h3>
                             ${breakdownHTML}
                         </div>
@@ -1617,14 +1689,27 @@
         `;
         shadowRoot.innerHTML = detailsModalHTML;
 
+        const container = shadowRoot.getElementById('simalyze-details-modal-container');
+        const content = shadowRoot.getElementById('simalyze-details-modal-content');
+        container.style.display = 'flex';
+        setTimeout(() => {
+            content.style.animation = `simalyze-slide-in-from-top ${colors.modalTransitionDuration}ms ease-out forwards`;
+            container.style.opacity = '1';
+            container.style.pointerEvents = 'auto';
+        }, 10);
+
         const detailsCloseButton = shadowRoot.getElementById('simalyze-details-close-button');
         detailsCloseButton.onclick = () => {
-            shadowRoot.getElementById('simalyze-details-modal-container').style.display = 'none';
+            content.style.animation = `simalyze-slide-out-to-top ${colors.modalTransitionDuration}ms ease-out forwards`;
+            container.style.opacity = '0';
+            container.style.pointerEvents = 'none';
+            setTimeout(() => {
+                container.style.display = 'none';
+                content.style.animation = '';
+            }, colors.modalTransitionDuration);
         };
         detailsCloseButton.onmouseover = () => { detailsCloseButton.style.backgroundColor = colors.buttonHover; };
         detailsCloseButton.onmouseout = () => { detailsCloseButton.style.backgroundColor = colors.buttonBg; };
-
-        shadowRoot.getElementById('simalyze-details-modal-container').style.display = 'flex';
     }
 
     function addSimalyzeSettingsButton() {
@@ -1642,14 +1727,14 @@
 
             simalyzeButton.style.cssText = `
                 background-color: ${colors.buttonBg};
-                border: ${colors.thinStroke} solid ${colors.buttonBorder};
+                border: var(--simalyze-thin-stroke) solid ${colors.buttonBorder};
                 border-radius: ${colors.borderRadius};
                 color: ${colors.textColor};
                 padding: 8px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+                transition: background-color var(--simalyze-project-card-transition-duration), border-color var(--simalyze-project-card-transition-duration), transform var(--simalyze-project-card-transition-duration);
                 cursor: pointer;
             `;
 
@@ -1672,7 +1757,7 @@
 
             const settingsSVG = `
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings">
-                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0 .73 2.73l.22.38a2 2 0 0 0-2.73.73l.15.08a2 2 0 0 1-2 0l.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                    <path d="M13 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0 .73 2.73l.22.38a2 2 0 0 0-2.73.73l.15.08a2 2 0 0 1-2 0l.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
                     <circle cx="12" cy="12" r="3"></circle>
                 </svg>
             `;
@@ -1684,12 +1769,12 @@
             };
 
             buttonContainer.appendChild(simalyzeButton);
-            return true; 
+            return true;
         }
-        return false; 
+        return false;
     }
 
-    let simalyzeButtonAdded = false; 
+    let simalyzeButtonAdded = false;
 
     function syncDarkMode() {
         if (document.documentElement.classList.contains('dark')) {
@@ -1738,10 +1823,10 @@
     applyCustomCSS();
 
     setTimeout(() => {
-        if (!simalyzeButtonAdded) { 
+        if (!simalyzeButtonAdded) {
             simalyzeButtonAdded = addSimalyzeSettingsButton();
         }
         applySlopRemover();
-    }, 1000); 
+    }, 1000);
 
 })();
